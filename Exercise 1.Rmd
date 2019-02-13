@@ -1,0 +1,875 @@
+---
+title: 'Data Mining and Statistical Learning: Exercise 1'
+author: "Tejaswi Pukkalla"
+date: "February 11, 2019"
+output:
+  html_document: default
+  word_document: default
+  pdf_document:
+    keep_tex: yes
+indent: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+```{r q1 load data, include=FALSE}
+library(tidyverse)
+library(mosaic)
+library(FNN)
+library(reshape2)
+library(expss)
+
+Greenbuildings <- read.csv("C:/Users/Tessie Krishna/Desktop/Greenbuildings.csv")
+
+summary(Greenbuildings)
+
+#Replicating the Analyst's results
+gb10<- Greenbuildings[ which(Greenbuildings$leasing_rate>10), ] #Removes rows with leasing rate<10%
+summary(gb10)
+
+gby<- gb10[ which(gb10$green_rating>0), ] #Greenrating=1
+summary(gby) 
+
+gbn<- gb10[ which(gb10$green_rating<1), ] #Greenrating=0
+summary(gbn)
+
+median(gb10$Rent) #Median of GB10 buildings rent
+median(gby$Rent) #Median of GBY buildings rent
+median(gbn$Rent) #Median of GBN buildings rent
+diff<-median(gby$Rent)-median(gbn$Rent) #Difference in Green Vs Non green rent
+diff
+
+mean(gb10$Rent) #Mean of GB10 buildings rent
+mean(gby$Rent) #Mean of GBY buildings rent
+mean(gbn$Rent) #Mean of GBN buildings rent
+
+median(gb10$leasing_rate)
+median(gby$leasing_rate)
+median(gbn$leasing_rate)
+
+mean(gb10$leasing_rate)
+mean(gby$leasing_rate)
+mean(gbn$leasing_rate)
+
+n<-30 #Operational life
+lr<- 0.9 #Leasing rate
+sqft<- 250000 #Area
+c<- 100000000 #Cost
+gp<- 0.05 #Green premium
+
+####PayOff Analysis
+P1<- (c*gp)/(diff*sqft)
+P2<- (c*gp)/(diff*sqft*lr)
+P1
+
+TP1<-(n-P1)*diff*sqft
+TP2<-(n-P2)*diff*sqft*lr
+
+or<- c(100:1)/100
+tp<- (c*gp)/(diff*sqft*or)
+
+gbplot<-data.frame(tp,or)
+gbplot
+
+plot1<- ggplot(gbplot, mapping = aes(tp, or))+
+  geom_point(mapping = aes(x = tp, y = or), color='yellow')+
+  labs(title="Payoff Analysis",x="Years to Payoff",y="Occupancy Rate")+
+    theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))
+```
+# The Analyst's Analysis
+
+```{r q1 plot 1, echo=FALSE}
+plot1
+```
+
+When we replicate the Analyst's data analysis steps, we are able to visualize the amount of time taken to break even the costs of building a green building. At an optimistic 100% occupancy rate, the company would break even in 7.78 years. However, the extreme negative case is when occupancy rate is 1%, it would take about 800 years to break even. We understand this is more of a calculation technicality than a real life scenario.
+
+
+```{r q1 plot 2, echo=FALSE}
+plot2<- ggplot(gbplot[1:76, ])+
+  geom_point(mapping = aes(tp[1:76], or[1:76]), color='yellow')+
+  labs(title="Payoff Analysis",subtitle="30 Year Operational Life",x="Years to Payoff",y="Occupancy Rate")+
+  coord_cartesian(xlim=c(0, 30))+
+  geom_hline(yintercept=1, linetype="dashed", color = "red")+
+  geom_vline(xintercept=7.78, linetype="dashed", color = "red")+
+  geom_hline(yintercept=0.25, linetype="dashed", color = "red")+
+  geom_vline(xintercept=30, linetype="dashed", color = "red")+
+  theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))
+plot2
+```
+
+Since the operational lifetime of the building is 30 years, it makes more sense to look at this timeline in a more compact manner. Even if the occupancy rates go as low as 25%, the builders would break even at the end of 30 years. 
+
+
+Although the analyst's desire for simplicity in terms of cleaning and keeping the data is understandable, it is however not prudent to follow. If there are enough green buildings that have occupancy rate of less than 10%, that might be a necessary trend to be picked up during analysis. Using the median instead of the mean would skew the data as the number of non green buildings is massive compared to green buildings.
+
+
+```{r q1 table 1,echo=FALSE}
+point2<- table(gb10$green_rating)
+point2
+```
+
+Where "0" represents the number of non-green buildings and "1" represents the number of green buildings
+
+```{r q1 hist, echo=FALSE}
+par(bg='black')
+par(fg='white')
+hist(gb10$Rent,
+     main = 'Distribution of Rent',
+     xlab = 'Rent(USD)',
+     col = 'green',
+     col.lab = 'white',
+     col.main = 'white',
+     col.axis = 'white',
+     border = 'darkgreen')
+```
+
+
+The above histogram shows how skewed the data is to the right. Since most values lie between 0 and 50, this would mean the median would be significantly different from the mean.
+
+```{r q1 table 2, echo=FALSE}
+table <- matrix(c(
+  median(gb10$Rent),
+  mean(gb10$Rent)
+),ncol=2,byrow=TRUE)
+
+colnames(table) <- c("Median","Mean")
+rownames(table) <- c("Whole Dataset")
+
+table <- as.table(table)
+table
+```
+
+If we take mean into consideration however, we can see that the rent difference of 2.6 doesn't hold true and the difference comes down to as low as 1.7. This greatly impacts how we would want to calculate the time taken to break even and the profitability of takinng up this investment.
+
+```{r q1 table 3, echo=FALSE}
+table <- matrix(c(
+  median(gb10$Rent),
+  mean(gb10$Rent),
+  median(gby$Rent),
+  mean(gby$Rent),
+  median(gbn$Rent),
+  mean(gbn$Rent)
+),ncol=2,byrow=TRUE)
+
+colnames(table) <- c("Median","Mean")
+rownames(table) <- c("Whole Dataset","Green","Non-Green")
+
+table <- as.table(table)
+table
+```
+
+\newpage
+
+#Our Analysis
+
+Instead of removing data that isn't convenient to tell a particular side of the story, we include it so as to have a complete dataset. This affects our calculations but not in a very steep manner. 
+
+
+```{r q1 our analysis, echo=FALSE}
+reenbuildings <- read.csv("C:/Users/Tessie Krishna/Desktop/Greenbuildings.csv")
+
+#summary(Greenbuildings)
+
+#Taking whole dataset
+
+gby<- Greenbuildings[ which(Greenbuildings$green_rating>0), ]
+#summary(gby)
+
+gbn<- Greenbuildings[ which(Greenbuildings$green_rating<1), ]
+#summary(gbn)
+
+# median(Greenbuildings$Rent)
+# median(gby$Rent)
+# median(gbn$Rent)
+diff<-median(gby$Rent)-median(gbn$Rent)
+# diff
+
+# mean(Greenbuildings$Rent)
+# mean(gby$Rent)
+# mean(gbn$Rent)
+# 
+# median(Greenbuildings$leasing_rate)
+# median(gby$leasing_rate)
+# median(gbn$leasing_rate)
+# 
+# mean(Greenbuildings$leasing_rate)
+# mean(gby$leasing_rate)
+# mean(gbn$leasing_rate)
+
+n<-30 #Operational life
+lr<- 0.9 #Leasing rate
+sqft<- 250000 #Area
+c<- 100000000 #Cost
+gp<- 0.05 #Green premium
+
+####PayOff Analysis
+P1<- (c*gp)/(diff*sqft)
+P2<- (c*gp)/(diff*sqft*lr)
+
+TP1<-(n-P1)*diff*sqft
+TP2<-(n-P2)*diff*sqft*lr
+
+or<- c(100:1)/100
+tp<- (c*gp)/(diff*sqft*or)
+
+
+gbplot<-data.frame(tp,or)
+
+ggplot(gbplot, mapping = aes(tp, or))+
+  geom_point(mapping = aes(x = tp, y = or), color='yellow')+
+  labs(title="Payoff Analysis",x="Years to Payoff",y="Occupancy Rate")+
+  theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))
+
+ggplot(gbplot[1:76, ])+
+  geom_point(mapping = aes(tp[1:76], or[1:76]), color='yellow')+
+  labs(title="Payoff Analysis",subtitle="30 Year Operational Life",x="Years to Payoff",y="Occupancy Rate")+
+  coord_cartesian(xlim=c(0, 30))+
+  geom_hline(yintercept=1, linetype="dashed", color = "red")+
+  geom_vline(xintercept=7.69, linetype="dashed", color = "red")+
+  geom_hline(yintercept=0.25, linetype="dashed", color = "red")+
+  geom_vline(xintercept=30, linetype="dashed", color = "red")+
+  theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))
+```
+
+The time taken to break even varies a bit as compared to analyst's numbers. Ours is a more conservative value that states it would take about 12 years to break even if the occupancy rate is a complete 100% and the entire lifetime of the building if it goes down to occupancy rate of 37%. To summarize, it is more prudent to include the whole dataset and be a bit more conservative when making investment decisions rather than to simplify or massage data till it becomes a convenient story to tell.
+
+\newpage
+
+## Question 2
+
+```{r q2 load the data, include=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(maptools)
+library(maps)
+library(mapproj)
+library(usmap)
+library(ggmap)
+library(mapdata)
+library(hflights)
+
+
+abia <- read.csv("C:/Users/Tessie Krishna/Desktop/ABIA.csv.txt")
+airports <- read.csv("C:/Users/Tessie Krishna/Desktop/airports.csv")
+
+abia_1 <- select(abia,Origin,Dest)
+airports <- select(airports,iata_code,name,latitude_deg,longitude_deg)
+
+abia_1 <- count(abia_1, vars = c("Origin", "Dest"))
+
+origin_xy <- merge(abia_1, airports, by.x="Origin", by.y="iata_code")
+names(origin_xy) <- c("origin", "destination","trips", "o_name", "oX", "oY")
+
+dest_xy <-  merge(origin_xy, airports, by.x="destination", by.y="iata_code")
+names(dest_xy) <- c("origin", "destination","trips", "o_name", "oY", "oX","d_name", "dY", "dX")
+
+dest_xy <- dest_xy[- grep("Erase", dest_xy$o_name),]
+dest_xy <- dest_xy[- grep("Erase", dest_xy$d_name),]
+
+xquiet<- scale_x_continuous("", breaks=NULL)
+yquiet<-scale_y_continuous("", breaks=NULL)
+quiet<-list(xquiet, yquiet)
+
+usa <- map_data("usa") 
+state <- map_data("state")
+
+par(bg='black')
+par(fg= 'white')
+
+plot_1 <- ggplot()+
+  geom_polygon(data = usa, aes(x=long, y = lat, group = group), fill = NA, color = "black")+
+  geom_polygon(data = state,aes(x = long, y = lat, fill = region, group = group), color = 'white')+
+  guides(fill=FALSE)+  # do this to leave off the color legend
+  geom_segment(data=dest_xy,aes(x=oX, y=oY,xend=dX, yend=dY, alpha=trips), col="black")+
+  scale_alpha_continuous(range = c(0.09, 0.9))+
+  theme(panel.background = element_rect(fill='black',colour='white'))+
+  quiet+
+  coord_fixed(1.3)+
+  geom_point(data=dest_xy,aes(x=oX, y=oY) ,color="blue", size=2)+
+  geom_point(data=dest_xy,aes(x=dX, y=dY) ,color="red", size=2)+
+  ggtitle("Flights to and from Austin International Airport in 2008")+
+  theme(plot.title = element_text(color='white'), axis.title.x = element_text(color='white'),axis.title.y = element_text(color='white') )+ 
+  theme(plot.background = element_rect(fill = "black"))
+```
+
+#Flights travelling to/from Austin
+
+We try to show the map of the United States, depicting the travel routes of all flights flying to/from Austin. The path density is determined by how many trips occur between the origin and destination cities. 
+
+```{r q2 plot 1,echo=FALSE}
+plot_1
+```
+
+\newpage
+
+We try to look at a scatterplots in departure delays to see if there are any trends with respect to the time or day of the year.
+
+```{r q2 plota, echo=FALSE, warning=FALSE}
+ggplot(abia, aes(Month, DepDelay))  +
+  geom_point(aes(Month, DepDelay), color = '#E4F00A') +
+  theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("Delay in departure: Monthly trend")+
+  labs(y= "Delay in departure (minutes)", x = "Month of the Year")
+```
+
+The delays seem to be concentrated more around the months of August and September which is the holiday season, so it makes sense that more number of flights lead to more delay. 
+
+```{r q2 plotb, echo=FALSE, warning=FALSE}
+ggplot(abia, aes(DayOfWeek, DepDelay))  +
+  geom_point(aes(DayOfWeek, DepDelay), color = '#22FF00') +
+  theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("Departure Delay Daily trend")+
+  labs(y= "Delay in departure", x = "Day of the week")
+```
+
+There doesnt seem to be a strong difference between delays on different days of the week, although weekends are a bit of a rush.
+
+```{r q2 plotc, echo=FALSE, warning=FALSE}
+ggplot(abia, aes(CRSDepTime, DepDelay))  +
+  geom_point(aes(CRSDepTime, DepDelay), color = '#E4F00A') +
+    theme(
+    panel.grid.major = element_line(color='white'),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "black"),
+    plot.title = element_text(color='white'), 
+    axis.title.x = element_text(color='white'),
+    axis.title.y = element_text(color='white'),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("Departure Delay Hourly trend")+
+  labs(y= "Delay in departure", x = "Departure time")
+```
+
+There are hardly any delays from midnight to 5a.m. This is to be expected as there aren't many flights during that time of the day. The delays seem to increase as the day progresses peaking in the evening and then again going down as the night passes.
+
+```{r q2 plot3, echo=FALSE, warning=FALSE}
+# Seasonal delays
+par(bg='black')
+par(fg= 'white')
+abia$Season <- abia$Month
+
+#recoding the spring months
+abia$Season [abia$Season == 3] <- 100
+abia$Season [abia$Season == 4] <- 100
+abia$Season [abia$Season == 5] <- 100
+
+#recoding the summer months
+abia$Season [abia$Season == 6] <- 200
+abia$Season [abia$Season == 7] <- 200
+abia$Season [abia$Season == 8] <- 200
+
+#recoding the fall months 
+abia$Season [abia$Season == 9] <- 300
+abia$Season [abia$Season == 10] <- 300
+abia$Season [abia$Season == 11] <- 300
+
+#recoding the winter months
+abia$Season [abia$Season == 12] <- 400
+abia$Season [abia$Season == 1] <- 400
+abia$Season [abia$Season == 2] <- 400
+
+plot_3 <- boxplot(formula = DepDelay ~ Season,
+                  data = abia,
+                  main = 'Departure delay by season',
+                  xlab = 'Season',
+                  ylab = 'Departure delay [min]',
+                  border = c('gray', 'red', 'orange', 'skyblue'),
+                  col.lab = 'white',
+                  col.main = 'white',
+                  col.axis = 'white',
+                  names = c('Spring', 'Summer', 'Fall', 'Winter'))
+```
+
+Above is a boxplot of delays grouped by season. This shows that thee are more delays in summer and winter as compared to spring and fall. This again resonates with our hypothesis of more delays during holiday season.
+
+```{r q2 plotp, echo=FALSE, warning=FALSE}
+# distance histogram
+par(bg='black')
+par(fg= 'white')
+hist(abia$Distance,
+     main = 'Distribution of flight distances',
+     xlab = 'Distance [miles]',
+     col = 'green',
+     col.lab = 'white',
+     col.main = 'white',
+     col.axis = 'white',
+     border = 'darkgreen'
+     )
+#I add a line indicating the mean of the group.
+abline(v=mean(abia$Distance), 
+       col = 'red',
+       lwd = 3)
+# I add a line indicating the median of the group.
+abline(v= median(abia$Distance), 
+       col = 'blue',
+       lty = 5,
+       lwd = 3)
+legend('topright',
+       legend = c('mean', 'median'), 
+       lty = c(1,5),
+       lwd = c(3,3),
+       col = c('red', 'blue'))
+```
+
+When we look at the relationship between number of flights and distance travelled, we see that most flights are for short distances only and very few flights travel across the country.
+
+```{r q2 plotq, echo=FALSE, warning=FALSE}
+par(bg='black')
+plot_2 <- plot(abia$Distance, 
+               abia$ArrDelay, 
+               xlab = 'Distance [miles]', 
+               ylab = 'Arrival Delay [min]', 
+               main = 'Relationship between Distance and Arrival Delay', 
+               pch = 20, 
+               col.lab = 'white',
+               col.main = 'white',
+               col.axis = 'white',
+               col = 'purple')
+```
+
+We also notice a slight increase in average delay with an increase in distance. This sounds reasonable as the long distance flights would require additional effort and time to get ready for the journey ahead.
+
+\newpage
+
+## Question 3
+```{r q3 load data,include=FALSE, warning=FALSE}
+library(tidyverse)
+library(mosaic)
+library(FNN)
+library(devtools)
+
+# read in the data: make sure to use the path name to
+# wherever you'd stored the file
+sclass <- read.csv("C:/Users/Tessie Krishna/Desktop/sclass.csv.txt")
+# The variables involved
+summary(sclass)
+
+# Focus on 2 trim levels: 350 and 65 AMG
+sclass350 = subset(sclass, trim == '350')
+dim(sclass350)
+
+sclass65AMG = subset(sclass, trim == '65 AMG')
+summary(sclass65AMG)
+
+# plot the data
+
+plot10<-ggplot(sclass350, aes(mileage, price))  +
+  geom_point(aes(mileage, price), color = '#E4F00A') +
+  geom_smooth(se = FALSE, color = '#22FF00')+ ylim(0, 120000)+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Price Vs Mileage of SCLASS350")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")  
+
+plot11<-ggplot(sclass65AMG, aes(mileage, price)) +
+  geom_point(aes(mileage, price), color = '#22FF00') +
+  geom_smooth(se = FALSE, color = '#E4F00A')+ ylim(0, 250000)+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Price Vs Mileage of SCLASS65AMG")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")
+
+
+
+###########################SCLASS350 Code###############################
+
+# Make a train-test split
+N = nrow(sclass350)
+N_train = floor(0.8 * N)
+N_test = N - N_train
+
+#####
+# Train/test split
+#####
+
+# randomly sample a set of data points to include in the training set
+train_ind = sample.int(N, N_train, replace = FALSE)
+
+# Define the training and testing set
+D_train = sclass350[train_ind, ]
+D_test = sclass350[-train_ind, ]
+
+# optional book-keeping step:
+# reorder the rows of the testing set by the Mileage variable
+# this isn't necessary, but it will allow us to make a pretty plot later
+D_test = arrange(D_test, mileage)
+head(D_test)
+
+# Now separate the training and testing sets into features (X) and outcome (y)
+X_train = select(D_train, mileage)
+y_train = select(D_train, price)
+X_test = select(D_test, mileage)
+y_test = select(D_test, price)
+
+#####
+# Fit a few models
+#####
+
+# linear and quadratic models
+lm1 = lm(price ~ mileage, data = D_train)
+lm2 = lm(price ~ poly(mileage, 2), data = D_train)
+
+# define a helper function for calculating RMSE
+rmse = function(y, ypred) {
+  sqrt(mean(data.matrix((y - ypred) ^ 2)))
+}
+
+ypred_lm1 = predict(lm1, X_test)
+ypred_lm2 = predict(lm2, X_test)
+rmse(y_test, ypred_lm1)
+rmse(y_test, ypred_lm2)
+
+
+# Multiple K values function
+knn_max = nrow(X_train)
+khat <- c()
+for (i in 3:knn_max)
+{
+  knn = knn.reg(
+    train = X_train,
+    test = X_test,
+    y = y_train,
+    k = i
+  )
+  names(knn)
+  ypred_knn = knn$pred
+  #####
+  # Compare the models by RMSE_out
+  #####
+  khat[i] = rmse(y_test, ypred_knn)
+  print(paste("RMSE for K=", i, "is", khat[i]))
+}
+
+####
+# plot the fit
+####
+
+K = c(1:knn_max)
+RMSE = (khat)
+rmse_k = ggplot() + geom_path(aes(x = K, y = RMSE), color= '#22FF00') +
+  scale_x_reverse() +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm1)), color = 'white') +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm2)), color = 'brown')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                RMSE Values for K Nearest Neighbours (SCLASS350)")+
+  labs(y= "RMSE", x = "K")
+
+rmse_k
+
+####
+#Optimal K Value=50
+######
+
+knn50 = knn.reg(train = X_train,
+                test = X_test,
+                y = y_train,
+                k = 50)
+names(knn50)
+ypred_knn50 = knn50$pred
+
+# attach the predictions to the test data frame
+D_test$ypred_lm2 = ypred_lm2
+D_test$ypred_knn50 = ypred_knn50
+p_test = ggplot(data = D_test) +
+  geom_point(mapping = aes(x = mileage, y = price), color = '#E4F00A') +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Predicted Price values for SCLASS350")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 120000)
+p_test
+
+p_test + geom_path(aes(x = mileage, y = ypred_knn50), color = '#22FF00') +
+  geom_path(aes(x = mileage, y = ypred_lm2), color = 'brown') +
+  geom_path(aes(x = mileage, y = ypred_lm1), color = 'white')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Fitted models for SCLASS350")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 120000)
+```
+
+```{r q3 Plot10, echo=FALSE, warning=FALSE}
+ggplot(sclass350, aes(mileage, price))  +
+  geom_point(aes(mileage, price), color = '#E4F00A') +
+  geom_smooth(se = FALSE, color = '#22FF00')+ ylim(0, 120000)+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Price Vs Mileage of SCLASS350")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")  
+```
+
+The above graph shows thedistribution of prices of SCLASS350 with respect to mileage offered. We have added a smoothing filter so see how the trend line should look like.
+
+\newpage
+
+Below is a graph showing the RMSE values of linear models of order 1 and 2 and KNN ranging from K=3 TO 332.
+
+```{r q3 rmse_k,echo=FALSE, warning=FALSE}
+K = c(1:knn_max)
+RMSE = (khat)
+rmse_k = ggplot() + geom_path(aes(x = K, y = RMSE), color= '#22FF00') +
+  scale_x_reverse() +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm1)), color = 'white') +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm2)), color = 'brown')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                RMSE Values for K Nearest Neighbours (SCLASS350)")+
+  labs(y= "RMSE", x = "K")
+rmse_k
+```
+
+
+Comparing the scatterplot with the fitted models (K=50), we get, 
+```{r q3 p_test,echo=FALSE, warning=FALSE}
+p_test
+```
+
+```{r q3 final, echo=FALSE, warning=FALSE}
+p_test + geom_path(aes(x = mileage, y = ypred_knn50), color = '#22FF00') +
+  geom_path(aes(x = mileage, y = ypred_lm2), color = 'brown') +
+  geom_path(aes(x = mileage, y = ypred_lm1), color = 'white')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Fitted models for SCLASS350")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 120000)
+```
+
+
+```{r loaddata2,include=FALSE, warning=FALSE}
+###########################SCLASS65AMG Code###############################
+
+# Make a train-test split
+N = nrow(sclass65AMG)
+N_train = floor(0.8 * N)
+N_test = N - N_train
+
+#####
+# Train/test split
+#####
+
+# randomly sample a set of data points to include in the training set
+train_ind = sample.int(N, N_train, replace = FALSE)
+
+# Define the training and testing set
+D_train = sclass65AMG[train_ind, ]
+D_test = sclass65AMG[-train_ind, ]
+
+# optional book-keeping step:
+# reorder the rows of the testing set by the Mileage variable
+# this isn't necessary, but it will allow us to make a pretty plot later
+D_test = arrange(D_test, mileage)
+head(D_test)
+
+# Now separate the training and testing sets into features (X) and outcome (y)
+X_train = select(D_train, mileage)
+y_train = select(D_train, price)
+X_test = select(D_test, mileage)
+y_test = select(D_test, price)
+
+#####
+# Fit a few models
+#####
+
+# linear and quadratic models
+lm1 = lm(price ~ mileage, data = D_train)
+lm2 = lm(price ~ poly(mileage, 2), data = D_train)
+
+# define a helper function for calculating RMSE
+rmse = function(y, ypred) {
+  sqrt(mean(data.matrix((y - ypred) ^ 2)))
+}
+
+ypred_lm1 = predict(lm1, X_test)
+ypred_lm2 = predict(lm2, X_test)
+rmse(y_test, ypred_lm1)
+rmse(y_test, ypred_lm2)
+
+
+# Multiple K values function
+knn_max = nrow(X_train)
+khat <- c()
+for (i in 3:knn_max)
+{
+  knn = knn.reg(
+    train = X_train,
+    test = X_test,
+    y = y_train,
+    k = i
+  )
+  names(knn)
+  ypred_knn = knn$pred
+  #####
+  # Compare the models by RMSE_out
+  #####
+  khat[i] = rmse(y_test, ypred_knn)
+  print(paste("RMSE for K=", i, "is", khat[i]))
+}
+
+####
+# plot the fit
+####
+
+K = c(1:knn_max)
+RMSE = (khat)
+rmse_k = ggplot() + geom_path(aes(x = K, y = RMSE), color= '#22FF00') +
+  scale_x_reverse() +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm1)), color = 'white') +
+  geom_path(aes(x = K, y = rmse(y_test, ypred_lm2)), color = 'brown')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                RMSE Values for K Nearest Neighbours (SCLASS65AMG)")+
+  labs(y= "RMSE", x = "K")
+
+rmse_k
+
+####
+#Optimal K Value=70
+######
+
+knn70 = knn.reg(train = X_train,
+                test = X_test,
+                y = y_train,
+                k = 70)
+names(knn70)
+ypred_knn70 = knn70$pred
+
+# attach the predictions to the test data frame
+D_test$ypred_lm2 = ypred_lm2
+D_test$ypred_knn70 = ypred_knn70
+p_test = ggplot(data = D_test) +
+  geom_point(mapping = aes(x = mileage, y = price), color = '#E4F00A') +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Predicted Price values for SCLASS65AMG")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 250000)
+p_test
+
+p_test + geom_path(aes(x = mileage, y = ypred_knn70), color = '#22FF00') +
+  geom_path(aes(x = mileage, y = ypred_lm2), color = 'brown') +
+  geom_path(aes(x = mileage, y = ypred_lm1), color = 'white')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Fitted models for SCLASS65AMG")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 250000)
+```
+
+```{r q3 Plot11,echo=FALSE, warning=FALSE}
+plot11
+```
+
+The above graph shows thedistribution of prices of SCLASS65AMG with respect to mileage offered. We have added a smoothing filter so see how the trend line should look like.
+
+\newpage
+
+Below is a graph showing the RMSE values of linear models of order 1 and 2 and KNN ranging from K=3 TO 332.
+
+```{r q3 rmse_k_1,echo=FALSE, warning=FALSE}
+rmse_k
+```
+
+
+Comparing the scatterplot with the fitted models (K=70), we get, 
+```{r q3 p_test_1,echo=FALSE, warning=FALSE}
+p_test
+```
+
+```{r q3 final_1,echo=FALSE, warning=FALSE}
+p_test + geom_path(aes(x = mileage, y = ypred_knn70), color = '#22FF00') +
+  geom_path(aes(x = mileage, y = ypred_lm2), color = 'brown') +
+  geom_path(aes(x = mileage, y = ypred_lm1), color = 'white')+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background=element_rect(fill = "gray"),
+    panel.background = element_rect(fill = 'black'))+
+  ggtitle("                                                                Fitted models for SCLASS65AMG")+
+  labs(y= "Price (USD)", x = "Mileage (MPH)")+
+  ylim(0, 250000)
+```
+
+The K value is higher for SCLASS65AMG as it has more outliers than SCLASS350 
