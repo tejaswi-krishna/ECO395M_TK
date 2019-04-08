@@ -1,0 +1,272 @@
+---
+output: pdf_document
+keep_tex: yes
+html_document: 
+keep_md: yes
+md_document:
+variant: markdown_github
+indent: yes
+title: 'Data Mining and Statistical Learning: Exercise 3'
+author: "Tejaswi Pukkalla"
+date: "April 8, 2019"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+```
+
+# Question 1:: Model Selection and Regulaization
+
+We go back to the dataset GreenBuildings from one of our earlier exercises in an attempt to build the best predictive model of price possible for us. Before delving further into various models of pricing, we first clean the data by removing any incomplete observations with blank values. We plan to explore several different models of pricing and compare them together to see which would be a better fit for the question in hand. For the buildings with green rating, we also add additional classification on the basis of their classes (a,b or c). 
+
+
+As a side note, we consider all the buildings with green rating as green certified and do not distinguish between LEED or EnergyStar rating as we do not believe there would be much of a statiscally significant difference between LEED OR EnergyStar rating. Our expectation is that both entities would maintain the same high standards of certification.
+
+
+```{r int, include=FALSE}
+library(tidyverse)
+library(reshape2)
+library(expss)
+library(mosaic)
+library(foreach)
+library(gamlr) 
+
+
+# load the main data
+greenbuildings <- read.csv("https://raw.githubusercontent.com/jgscott/ECO395M/master/data/greenbuildings.csv")
+
+#Omit na data
+greenbuildings <- na.omit(greenbuildings)
+
+#Classify data
+greenbuildings_a <- subset(greenbuildings,class_a=="1")
+greenbuildings_b <- subset(greenbuildings,class_b=="1")
+greenbuildings_c <- subset(greenbuildings,class_a=="0"&class_b=="0")
+```
+
+We start the process with a simple linear model, where we believe the important factors that determine the price of the building are the size of the building, number of stories, its class in case it is green rated, amenities represented with the help of indicator variables, fuel costs and clustering them on the basis of proximity.We follow it up with other models such as forward selection, backward selection, stepwise selection, for all the buildings together. We get the following number of factore being used by each model.
+
+```{r bsm, include=FALSE}
+# baseline medium model
+lm_medium <- function(x){
+  lm(Rent ~ cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent, data=x)
+}
+# forward selection
+lm_forward <- function(x){
+  lm0 = lm(Rent ~ 1, data=x)
+  lm_forward = step(lm0, direction='forward',scope=~(cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2) 
+}
+# backward selection?
+lm_backward <- function(x){
+  lm(Rent ~ (cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2, data=x)
+
+  }
+# stepwise selection
+# note that we start with a reasonable guess
+lm_step <- function(x){
+  step(lm(Rent ~ cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent, data=x), 
+       scope=~(. + cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2)
+}
+
+n.coefficients <- function(x){
+  as.numeric(sapply(x, length)[1]) + 1
+}
+
+
+### The Best model
+lm_medium_all <- lm_medium(greenbuildings)
+lm_forward_all <- lm_forward(greenbuildings)
+lm_backward_all <- drop1(lm_backward(greenbuildings))
+lm_step_all <- lm_step(greenbuildings)
+
+
+variables <- c(n.coefficients(lm_medium_all),
+               n.coefficients(lm_forward_all),
+               n.coefficients(lm_backward_all),
+               n.coefficients(lm_step_all)
+)
+
+
+models <- c("lm_medium_all Model",
+            "lm_forward_all Model",
+            "lm_backward_all Model",
+            "lm_step_all Model"
+)
+
+
+models.variables <- data.frame(
+  model_type = models,
+  Number_of_variables = variables
+)
+```
+
+
+```{r mods, echo=FALSE}
+models.variables
+```
+
+We see that models have different number of factors determining the prices. As our goal is to determine if there is and quantify the average change in rental income per square foot for buildings with green certification, holding all other variables constant, we must see if our target variable green rating is even used in these  models.So now, let's see if the rental income is affected by the green rating.
+
+
+```{r green, include=FALSE}
+## Determining Green Rating Effects on Rental Income
+green_rating_coefficient <- c(
+  coef(lm_medium_all)["green_rating"],
+  coef(lm_forward_all)["green_rating"],
+  "NA",
+  coef(lm_step_all)["green_rating"]
+)
+
+models <- c("lm_medium_all Model",
+            "lm_forward_all Model",
+            "lm_backward_all Model",
+            "lm_step_all Model"
+)
+
+models.coefficients <- data.frame(
+  model_type = models,
+  green_rating_value = green_rating_coefficient
+)
+```
+
+```{r mod2, echo=FALSE}
+models.coefficients
+```
+
+By looking at the coefficients on these various models, we can see that while backward selection doesn't take green rating into account for its final set of factors, it is predominantly showing an effect on the other models. Green rating on average, increases the rental income of a building by 0.54 dollars for linear model, 1.25 dollars for a forward selection and 1.15 dollars per square foot approximately. As an additional method to check for, we also use the gamma-lasso regression. This regression conveniently regularizes the model selection process by minimizing the deviance of the model and at the same time penalizing it for being overly complex - which is vital for improving out-of-sample predictions. The lasso approach uses the sparse matrix that we need to setup prior to give sparse solutions which automatically select variables for us. It provides a value much closer to our linear model at 0.35 dollars increase in rental income per square foot on an average. Hence, it also acts as a cross check to our previous conclusion.
+
+```{r glr, include=FALSE}
+scx = sparse.model.matrix(Rent ~ ., data=greenbuildings)[,-1]
+scy = greenbuildings$Rent
+sclasso = gamlr(scx, scy)
+```
+
+```{r plot, echo=FALSE}
+plot(sclasso)
+```
+
+```{r glr2, include=FALSE}
+lm_medium = lm(Rent ~ cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent, data=greenbuildings)
+  
+
+lm_step = step(lm_medium,
+               scope=~(. + cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2)
+  
+lmstepbeta = coef(lm_step)["green_rating"]
+
+scbeta = coef(sclasso)
+```
+
+```{r glrv, echo=FALSE}
+scbeta
+```
+
+Let's now try to look into the green rating effect and if it is different for different sets of buildings. We have already divided the original datasets into subsets, classifying the green rated buildings on their class. Now we see if the green rating effect is more pronounced for one of these over the other.
+
+```{r class, include=FALSE}
+## Determining Green Rating Effects on Rental Income by Building Class
+
+# baseline medium model
+lm_medium <- function(x){
+  lm(Rent ~ cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent, data=x)
+}
+# forward selection
+lm_forward <- function(x){
+  lm0 = lm(Rent ~ 1, data=x)
+  lm_forward = step(lm0, direction='forward',scope=~(cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2) 
+}
+# backward selection?
+lm_backward <- function(x){
+  lm(Rent ~ (cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2, data=x)
+
+  }
+# stepwise selection
+# note that we start with a reasonable guess
+lm_step <- function(x){
+  step(lm(Rent ~ cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent, data=x), 
+       scope=~(. + cluster + size + stories + age + renovated + class_a + class_b + green_rating + amenities + Gas_Costs + Electricity_Costs + cluster_rent)^2)
+}
+
+n.coefficients <- function(x){
+  as.numeric(sapply(x, length)[1]) + 1
+}
+
+lm_medium_a <- lm_medium(greenbuildings_a)
+lm_forward_a <- lm_forward(greenbuildings_a)
+lm_backward_a <- drop1(lm_backward(greenbuildings_a))
+lm_step_a <- lm_step(greenbuildings_a)
+lm_medium_b <- lm_medium(greenbuildings_b)
+lm_forward_b <- lm_forward(greenbuildings_b)
+lm_backward_b <- drop1(lm_backward(greenbuildings_b))
+lm_step_b <- lm_step(greenbuildings_b)
+lm_medium_c <- lm_medium(greenbuildings_c)
+lm_forward_c <- lm_forward(greenbuildings_c)
+lm_backward_c <- drop1(lm_backward(greenbuildings_c))
+lm_step_c <- lm_step(greenbuildings_c)
+
+
+
+green_rating_coefficient <- c(
+coef(lm_medium_all)["green_rating"],
+coef(lm_forward_all)["green_rating"],
+"NA",
+coef(lm_step_all)["green_rating"],
+
+coef(lm_medium_a)["green_rating"],
+coef(lm_forward_a)["green_rating"],
+"NA",
+coef(lm_step_a)["green_rating"],
+coef(lm_medium_b)["green_rating"],
+coef(lm_forward_b)["green_rating"],
+"NA",
+coef(lm_step_c)["green_rating"],
+coef(lm_medium_c)["green_rating"],
+coef(lm_forward_c)["green_rating"],
+"NA",
+coef(lm_step_c)["green_rating"]
+)
+
+models <- c("lm_medium_all Model",
+"lm_forward_all Model",
+"lm_backward_all Model",
+"lm_step_all Model",
+"lm_medium_class.a Model",
+"lm_forward_class.a Model",
+"lm_backward_class.a Model",
+"lm_step_class.a Model",
+"lm_medium_class.b Model",
+"lm_forward_class.b Model",
+"lm_backward_class.b Model",
+"lm_step_class.b Model",
+"lm_medium_class.c Model",
+"lm_forward_class.c Model",
+"lm_backward_class.c Model",
+"lm_step_class.c Model"
+)
+
+
+models.coefficients <- data.frame(
+model_type = models,
+green_rating_value = green_rating_coefficient
+)
+```
+
+```{r last, echo=FALSE}
+models.coefficients
+```
+
+We see that the increase in rental income is way higher for Class B and C buildings as compared to Class A buildings. At first sight, it seems counter-intuitive. But this is a good reflection of how easy it is to get confounding variables messing up your interpretation. My understanding of why it would be lower increase in rental income per square foot for Class A buildings over Class B and Class C would be as follows. On an average, the Class A buildings might be way larger than Class B building because of which while they may be priced the same way, the per square foot rate might vary. There might be other confounding variables that are present in Class B and Class C buildings but not in Class A buildings, thereby inflating their effect on the rental income. 
+
+
+# Question 2:: What Causes What?
+
+1. If we merely run a regression on the crime rate and number of cops in a city for a few different cities, we would get completely haphazard results because there would be way too many issues with that regression. For starters, the crime data should be relative to the population of the city. For example, if there are 20 crimes a day in a city of 200, that's at least 10% of the population being affected. However, if there are 500 crimes being committed in a  city of about 20,000, that's about 2.5% of the population being affected. Hence, the crime data needs to be relative and not absolute. The same goes for number of cops. It should be the proportion of cops in population that should be measured. Another issue would be omitted variable bias, such as, a city that has no tourism attractions might not have many visitors reducing the crime rate by a large amount, but if that city has high cops for other reasons, the low crime rate gets attributed to the wrong resons of causality. Each city that we choose has its own fixed characteristics that also explains crime rate, without accounting for which, regression run on number of cops would give a very biased result.
+
+
+2. By observing the rise in the number of cops, change in dependent variable, on a day that showed high terror alert, which is not related to change in the daily expected crime rate, the independent variable, they were able to create a controlled environment where there was a natural shifting of the dependent variable in question, holding all else constant. By doing that, they were able to run a regression on the crime rate and how it changed when there was an influx of cops in the city. They were able to show that the rise in number of cops reduced the daily crime rate of the city by more than 7 on an average with other factors remaining the same, statistically significant at 5%. Even after controlling for any change in the number of tourists/visitors or basically any change in the amount of potential victims, the crime rate still went down by about 6 units.
+
+3. One of the most serious and hard to evade issue in linear regression is the omitted variable bias. It is when by omitting a variable that could potentially affect the independent variable in a significant manner, we confound the effect of the present dependent variables in the regression. The researchers had to control for metro ridership to see if there was any reduction in the number of potential victims of crime due to the terror alert that might bring the crime rate down. By controlling for this variable, they could now see how much the overall crime rate would go down due to mainly the increase in number of cops.
+
+4. In Table 4, the researchers are basically checking if the crime rate is affected in a particular district more than the others when the number of cops increases. They find that District 1 sees an almost 10 units of reduction in the crime rate overall and about 6.2 units more than the average reduction, statistically significant at 5%. The other districts saw an overall decrease in crime rate of almost 8 units, a 0.6 units more than the overall expected drop in the crime rate even after controlling the metro riders and ensuring there wasn't much of a difference in the chances of the crime rate to drop intrinsically. With this data, we can clearly conclude that an increase in the cops does have a negative effect on the crime rate of a city.
+
+*****************************************THE END*******************************************
