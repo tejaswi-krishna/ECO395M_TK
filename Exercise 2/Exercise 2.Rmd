@@ -1,0 +1,777 @@
+---
+title: "Homework 2"
+author: "Frank Chou, Milo Opdahl, Tejaswi Pukkalla"
+date: "March 12, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE)
+```
+
+# Question 1: Building a Better Model
+Let's first look at the summary statistics of the data before going into developing regression models. 
+
+```{r q1 load data, include=FALSE}
+library(tidyverse)
+library(FNN)
+library(mosaic)
+library(psycho)
+data(SaratogaHouses)
+```
+
+```{r q1 summary, echo=FALSE}
+summary(SaratogaHouses)
+```
+
+The average price of houses in Saratoga, NY is around $200,000. On average, houses are around 28 years old, with hardly 80 new constructions (out of more than 1500), with an estimated living area of 1755 sq feet, 3 bedrooms and 2 bathrooms.About 65% of these houses have hot air heating, 70% of them use gas fuel, about 63% of them do not use centrail air conditioning.Only 15 of these houses are waterfront properties.
+
+We start by first building a baseline model using just bedrooms, bathrooms and Airconditioning and Waterfront property as variables and look at the regression coefficients.
+
+```{r q1 baseline model, include=FALSE}
+# Baseline model
+lm_small = lm(price ~ bedrooms + centralAir + bathrooms + waterfront, data=SaratogaHouses)
+```
+
+```{r q1 coefsmall, echo=FALSE}
+coef(lm_small)
+```
+
+We see that while increase in bedrooms and bathrooms increases the price, not having central air conditiong o=and not being waterfron tproperty drives down the price. This howeever, isn't very efficient. So then we add additonal effects such as land value, living area, age of the building, sewage type, fuel type, lot size and if the building is a new construction or not and look at the new regression coefficients.
+
+```{r q1 extra model, include=FALSE}
+# 10 main effects
+lm_medium = lm(price ~ . - sewer - age - livingArea - landValue - pctCollege, data=SaratogaHouses)
+```
+
+```{r q1 coefmed, echo=FALSE}
+coef(lm_medium)
+```
+
+While this gives us a better picture, we still might be missing any interaction between these variables that might lead to conflation of estimator coefficients. Hence, we next run the regression taking into account the interactions possible. After that, we compare out of sample predictions to see how effective our regression model is and then calculate the average root mean square errors for these three regresssions.
+
+```{r q1 inter, include=FALSE}
+# All interactions
+# the ()^2 says "include all pairwise interactions"
+lm_big = lm(price ~ (. - sewer - age - livingArea - landValue - pctCollege)^2, data=SaratogaHouses)
+####
+# Compare out-of-sample predictive performance
+####
+# Split into training and testing sets
+n = nrow(SaratogaHouses)
+n_train = round(0.8*n)  # round to nearest integer
+n_test = n - n_train
+train_cases = sample.int(n, n_train, replace=FALSE)
+test_cases = setdiff(1:n, train_cases)
+saratoga_train = SaratogaHouses[train_cases,]
+saratoga_test = SaratogaHouses[test_cases,]
+# Fit to the training data
+lm1 = lm(price ~ bedrooms + centralAir + bathrooms + waterfront, data=saratoga_train)
+lm2 = lm(price ~ . - sewer - age - livingArea - landValue - pctCollege, data=saratoga_train)
+lm3 = lm(price ~ (. - sewer - age - livingArea - landValue - pctCollege)^2, data=saratoga_train)
+# Predictions out of sample
+yhat_test1 = predict(lm1, saratoga_test)
+yhat_test2 = predict(lm2, saratoga_test)
+yhat_test3 = predict(lm3, saratoga_test)
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+# Root mean-squared prediction error
+RMSE_Base <- rmse(saratoga_test$price, yhat_test1)
+RMSE_Extra <- rmse(saratoga_test$price, yhat_test2)
+RMSE_Interactions <- rmse(saratoga_test$price, yhat_test3)
+```
+
+```{r q1 R, echo=FALSE}
+RMSE_Base
+RMSE_Extra
+RMSE_Interactions
+```
+
+Now let's improve the model by adding multiple interaction terms and repeating the regression a hundred times and taking an average of the root mean square errors.
+
+
+```{r q1 repeat, include=FALSE}
+# easy averaging over train/test splits
+library(mosaic)
+rmse_vals = do(100)*{
+  
+  # re-split into train and test cases
+  n_train = round(0.8*n)  # round to nearest integer
+  n_test = n - n_train
+  train_cases = sample.int(n, n_train, replace=FALSE)
+  test_cases = setdiff(1:n, train_cases)
+  saratoga_train = SaratogaHouses[train_cases,]
+  saratoga_test = SaratogaHouses[test_cases,]
+  
+  # fit to this training set
+  lm2 = lm(price ~ . - sewer - waterfront - landValue - newConstruction, data=saratoga_train)
+  
+  lm_boom = lm(price ~ lotSize + age + pctCollege + 
+                 fireplaces + rooms + heating + fuel + centralAir +
+                 bedrooms*rooms + bathrooms*rooms + 
+                 bathrooms*livingArea, data=saratoga_train)
+  
+  lm_biggerboom = lm(price ~ lotSize + landValue + waterfront + newConstruction + bedrooms*bathrooms + heating + fuel + pctCollege + rooms*bedrooms + rooms*bathrooms + rooms*heating + livingArea, data=saratoga_train)
+  
+  
+  # predict on this testing set
+  yhat_test2 = predict(lm2, saratoga_test)
+  yhat_testboom = predict(lm_boom, saratoga_test)
+  yhat_testbiggerboom = predict(lm_biggerboom, saratoga_test)
+  c(rmse(saratoga_test$price, yhat_test2),
+    rmse(saratoga_test$price, yhat_testboom),
+    rmse(saratoga_test$price, yhat_testbiggerboom))
+}
+rmse_vals
+A <- colMeans(rmse_vals)
+```
+
+
+```{r q1 R2, echo=FALSE}
+A
+```
+
+Now, we see that our RMSE values are better than the ones we derived in class. However, to build a KNN model to better our outcomes, we first need to standardize our variables and rerun the linear regressions as well so that the RMSE values across different kinds of regressions are comparable. Let's look at the summary statistics of the standardized variables to ensure they have indeed all been standardized.
+
+```{r q1 std, include=FALSE}
+z_SaratogaHouses <- SaratogaHouses %>% 
+  psycho::standardize() 
+## Taking back-up of the input file, in case the original data is required later
+z_shbc <- z_SaratogaHouses
+## Convert the dependent var to factor. Normalize the numeric variables  
+##z_SaratogaHouses$Default <- factor(z_SaratogaHouses$Default)
+num.vars <- sapply(z_SaratogaHouses, is.numeric)
+z_SaratogaHouses[num.vars] <- lapply(z_SaratogaHouses[num.vars], scale)
+```
+
+```{r q1 sum, echo=FALSE}
+summary(z_SaratogaHouses)
+```
+
+Let's now repeat the linear regressions as before and get the average RMSE values for the three regressions.
+
+```{r q1 repreg, include=FALSE}
+##Generate caterical variable dummies
+library(fastDummies)
+results <- fastDummies::dummy_cols(z_SaratogaHouses)
+summary(results)
+myvars <- c("landValue", "livingArea", "bedrooms", "centralAir_Yes", "bathrooms", "waterfront_Yes", "age", "fuel_electric", "fuel_gas", "fuel_oil", "lotSize", "newConstruction_Yes")
+results.subset <- results[myvars]
+summary(results.subset)
+####
+# Compare out-of-sample predictive performance
+####
+# Split into training and testing sets
+n = nrow(results)
+n_train = round(0.8*n)  # round to nearest integer
+n_test = n - n_train
+train_cases = sample.int(n, n_train, replace=FALSE)
+test_cases = setdiff(1:n, train_cases)
+saratoga_train = results[train_cases,]
+saratoga_test = results[test_cases,]
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+# easy averaging over train/test splits
+rmse_vals = do(100)*{
+  
+  # re-split into train and test cases
+  n_train = round(0.8*n)  # round to nearest integer
+  n_test = n - n_train
+  train_cases = sample.int(n, n_train, replace=FALSE)
+  test_cases = setdiff(1:n, train_cases)
+  saratoga_train = results[train_cases,]
+  saratoga_test = results[test_cases,]
+  
+  # fit to this training set
+  lm2 = lm(price ~ . - sewer - rooms - fireplaces - heating - pctCollege, data=saratoga_train)
+  
+  lm_boom = lm(price ~ bedrooms + centralAir + landValue + livingArea + bathrooms +
+                 landValue*livingArea + bedrooms*bathrooms + bedrooms*landValue, data=saratoga_train)
+  
+  lm_biggerboom = lm(price ~ bedrooms + centralAir + landValue + livingArea + bathrooms + waterfront + lotSize + age +
+                       fuel + newConstruction + 
+                       landValue*lotSize + bathrooms*rooms + age*newConstruction + 
+                       bedrooms*bathrooms + centralAir*fuel + landValue*waterfront, data=saratoga_train)
+  
+  
+  # predict on this testing set
+  yhat_test2 = predict(lm2, saratoga_test)
+  yhat_testboom = predict(lm_boom, saratoga_test)
+  yhat_testbiggerboom = predict(lm_biggerboom, saratoga_test)
+  c(rmse(saratoga_test$price, yhat_test2),
+    rmse(saratoga_test$price, yhat_testboom),
+    rmse(saratoga_test$price, yhat_testbiggerboom))
+}
+rmse_vals
+colMeans(rmse_vals)
+V1 <- mean(rmse_vals$V1)
+V2 <- mean(rmse_vals$V2)
+V3 <- mean(rmse_vals$V3)
+```
+
+```{r q1 vs, echo=FALSE}
+V1
+V2
+V3
+```
+
+We are ready to run the KNN regression using the same variables. 
+
+```{r q1 knn, include=FALSE}
+####
+# Compare out-of-sample predictive performance using KNN
+####
+# Split into training and testing sets
+n = nrow(results)
+n_train = round(0.8*n)  # round to nearest integer
+n_test = n - n_train
+train_cases = sample.int(n, n_train, replace=FALSE)
+test_cases = setdiff(1:n, train_cases)
+saratoga_train = results[train_cases,]
+saratoga_test = results[test_cases,]
+#####
+# Train/test split
+#####
+# randomly sample a set of data points to include in the training set
+train_ind = sample.int(n, n_train, replace=FALSE)
+# Define the training and testing set
+D_train = results[train_ind,]
+D_test = results[-train_ind,]
+X_train = dplyr::select(D_train,myvars)
+y_train = dplyr::select(D_train, price)
+X_test = dplyr::select(D_test, myvars)
+y_test = dplyr::select(D_test, price)
+# Running KNN
+rmse = function(y, ypred) {
+  sqrt(mean(data.matrix((y - ypred) ^ 2)))
+}
+# Multiple K values function
+knn_max = nrow(X_train)
+khat <- c()
+for (i in 3:knn_max)
+{
+  knn = knn.reg(
+    train = X_train,
+    test = X_test,
+    y = y_train,
+    k = i
+  )
+  names(knn)
+  ypred_knn = knn$pred
+  #####
+  # Compare the models by RMSE_out
+  #####
+  khat[i] = rmse(y_test, ypred_knn)
+}
+Averagek <- mean(khat)
+####
+# plot the fit
+####
+K = c(1:knn_max)
+RMSE = (khat)
+rmse_k = ggplot() + geom_path(aes(x = K, y = RMSE), color="red") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V1)), color="green") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V2)), color="brown") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V3)), color="purple")+
+  geom_path(aes(x = K, y = Averagek), color="black")+
+  theme_bw(base_size = 18) +
+  xlim(0,1000)
+```
+
+```{r q1 plo1, echo=FALSE}
+rmse_k
+```
+
+Since we are only interested in looking at the data where RMSE does better than the linear models, let us narrow down our K values upto 500. We can see below that the optimal K value seems to be closer to 50. 
+
+```{r q1 pl, include=FALSE}
+rmse_k1 = ggplot() + geom_path(aes(x = K, y = RMSE), color="red") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V1)), color="green") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V2)), color="brown") +
+  geom_path(aes(x = K, y = mean(rmse_vals$V3)), color="purple")+
+  geom_path(aes(x = K, y = Averagek), color="black")+
+  theme_bw(base_size = 18) +
+  xlim(0,500)
+```
+
+```{r q1 plo2, echo=FALSE}
+rmse_k1
+```
+
+Since, we have by now justified our usage of the variables in both the linear as well as the KNN regression by minimizing RMSE, let us have a look at the variables and their coefficients of regression once again. 
+
+
+```{r q1 pp, include=FALSE}
+n_train = round(0.8*n)  # round to nearest integer
+n_test = n - n_train
+train_cases = sample.int(n, n_train, replace=FALSE)
+test_cases = setdiff(1:n, train_cases)
+saratoga_train = results[train_cases,]
+saratoga_test = results[test_cases,]
+# fit to this training set
+lm_biggerboom = lm(price ~ bedrooms + centralAir + landValue + livingArea + bathrooms + waterfront + lotSize + age +
+                     fuel + newConstruction + 
+                     landValue*lotSize + bathrooms*rooms + age*newConstruction + 
+                     bedrooms*bathrooms + centralAir*fuel + landValue*waterfront, data=saratoga_train)
+```
+
+```{r q1 fin, echo=FALSE}
+coef(lm_biggerboom)
+```
+
+Being a waterfront property increases the price steeply. Prices are also driven by the number of bathrooms and rooms and are negatively related with number of bedrooms although this would be because of the association between the bedrooms, bathrooms and rooms. Central Airconditioning is another driving factor in the determination of prices. Based on the type of fuel used, the price of house varies from high for gas to low for electricity. Hot air heating also drives the prices up as compared to electricity or water. Being a new construction however, starkly affects the price of the house. 
+
+
+
+
+# Question 2: A Hospital Audit
+
+```{r question 2 code,include=FALSE}
+rm(list=ls())
+library(MASS) 	## a library of example datasets
+library(tidyverse)
+library(nnet)  # for multinom
+library(mosaic)
+options(warn=-1)
+brca <- read.csv("./brca.csv")
+#####
+#First question: are some radiologists more clinically conservative than others in recalling patients, holding patient risk factors equal?
+# Second question: when the radiologists at this hospital interpret a mammogram to make a decision on whether to recall the patient, does the data suggest that they should be weighing some clinical risk factors more heavily than they currently are?
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+df_rad13 = subset(brca,radiologist=="radiologist13")
+df_rad34 = subset(brca,radiologist=="radiologist34")
+df_rad66 = subset(brca,radiologist=="radiologist66")
+df_rad89 = subset(brca,radiologist=="radiologist89")
+df_rad95 = subset(brca,radiologist=="radiologist95")
+probtest = function(a,b){
+  n = nrow(a)
+  n_train = round(0.8*n) #take x times n, then round to nearest
+  n_test = n - n_train #number of n test is n minus n_train
+  
+  train_ind = sort(sample.int(n, n_train, replace=FALSE)) # randomly sample from n, n_train times, without replacement, then sort
+  brca_train = dplyr::select(a[train_ind,],-radiologist)
+  brca_test = dplyr::select(a[-train_ind,],-radiologist)
+  brca.w_test = dplyr::select(subset(brca,radiologist != b),-radiologist)
+  
+  # train models: recall
+  maxit <<- 10000
+  
+  lm1 <<- glm(recall ~ .-cancer,
+            data=brca_train,
+            maxit = maxit)
+  lm2 <<- glm(recall ~ (.-cancer)^2, 
+            data=brca_train, 
+            maxit = maxit)
+  # train models: cancer
+  lm3 <<- glm(cancer ~ recall,
+              data=brca_train,
+              maxit = maxit)
+  lm4 <<- glm(cancer ~ .,
+              data=brca_train,
+              maxit = maxit)
+  lm5 <<- glm(cancer ~ .-recall, 
+              data=brca_train, 
+              maxit = maxit)
+  lm6 <<- glm(cancer ~ (.-recall)^2, 
+              data=brca_train, 
+              maxit = maxit)
+  
+  # predict on the specific radiologist testing set
+  yhat_test1 = predict(lm1,brca_test)
+  yhat_test2 = predict(lm2,brca_test) 
+  
+  yhat_test1.w = predict(lm1,brca.w_test)
+  yhat_test2.w = predict(lm2,brca.w_test)
+  
+  yhat_test3 = predict(lm3,brca_test)
+  yhat_test4 = predict(lm4,brca_test)
+  yhat_test5 = predict(lm5,brca_test)
+  yhat_test6 = predict(lm6,brca_test)
+  
+  yhat_test3.w = predict(lm3,brca.w_test)
+  yhat_test4.w = predict(lm4,brca.w_test)
+  yhat_test5.w = predict(lm5,brca.w_test)
+  yhat_test6.w = predict(lm6,brca.w_test)
+  
+  # predict on the other radiologists testing set
+  
+  rmse = function(y, yhat) {
+    sqrt( mean( (y - yhat)^2 ) )
+  }
+  
+  c(rmse(brca_test$recall, yhat_test1),
+    rmse(brca_test$recall, yhat_test2),
+    
+    rmse(brca.w_test$recall, yhat_test1.w),
+    rmse(brca.w_test$recall, yhat_test2.w),
+    
+    rmse(brca_test$recall, yhat_test3),
+    rmse(brca_test$recall, yhat_test4),
+    rmse(brca_test$recall, yhat_test5),
+    rmse(brca_test$recall, yhat_test6),
+    
+    rmse(brca.w_test$recall, yhat_test3.w),
+    rmse(brca.w_test$recall, yhat_test4.w),
+    rmse(brca.w_test$recall, yhat_test5.w),
+    rmse(brca.w_test$recall, yhat_test6.w)
+  )
+}
+# radiologist13 radiologist34 radiologist66 radiologist89 radiologist95
+rad13 = do(100)*{probtest(df_rad13,"radiologist13")}
+rad34 = do(100)*{probtest(df_rad34,"radiologist34")}
+rad66 = do(100)*{probtest(df_rad66,"radiologist66")}
+rad89 = do(100)*{
+  tryCatch({
+  probtest(df_rad89,"radiologist89")
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+rad95 = do(100)*{probtest(df_rad95,"radiologist95")}
+superrad = do(100)*{probtest(brca,"")}
+df = as.data.frame(
+  rbind(
+  colMeans(rad13),
+  colMeans(rad34),
+  colMeans(rad66),
+  colMeans(rad89),
+  colMeans(rad95),
+  colMeans(superrad)
+  )
+)
+rownames(df) = c("radiologist13","radiologist34","radiologist66","radiologist89","radiologist95","SuperRad")
+colnames(df) = c("lm1","lm2","lm1.w","lm2.w","lm3","lm4","lm5","lm6","lm3.w","lm4.w","lm5.w","lm6.w")
+df = as.data.frame(t(df))
+df$Rad13.compare = (df$radiologist13 - df$SuperRad)
+df$Rad34.compare = (df$radiologist34 - df$SuperRad)
+df$Rad66.compare = (df$radiologist66 - df$SuperRad)
+df$Rad89.compare = (df$radiologist89 - df$SuperRad)
+df$Rad95.compare = (df$radiologist95 - df$SuperRad)
+df = as.data.frame(t(df))
+df2 = df[,c(1,3,2,4,5,9,6,10,7,11,8,12)]
+df2 = as.data.frame(t(df2))
+# a confusion table to determine the best way to detect cancer
+n = nrow(brca)
+n_train = round(0.8*n) #take x times n, then round to nearest
+n_test = n - n_train #number of n test is n minus n_train
+train_ind = sort(sample.int(n, n_train, replace=FALSE)) # randomly sample from n, n_train times, without replacement, then sort
+brca_train = brca[train_ind,]
+brca_test = brca[-train_ind,]
+lm3 <<- glm(cancer ~ recall,
+            data=brca_train,
+            maxit = maxit)
+lm4 <<- glm(cancer ~ .,
+            data=brca_train,
+            maxit = maxit)
+lm5 <<- glm(cancer ~ .-recall, 
+            data=brca_train, 
+            maxit = maxit)
+lm6 <<- glm(cancer ~ (.-recall)^2, 
+            data=brca_train, 
+            maxit = maxit)
+confusion.table = function(x){
+  probhat_test = predict(x, newdata=brca_test)
+  yhat_test = ifelse(probhat_test >= 0.1, 1, 0)
+  table(y=brca_test$cancer, yhat=yhat_test)
+}
+confusion.table(lm3)
+confusion.table(lm4)
+confusion.table(lm5)
+confusion.table(lm6)
+```
+
+Hospital Audits are important to determine the effectiveness of hospital operations from a objective standpoint. In this particular case, the goal is to determining the performance of radiologists using a statistical audit of their recent patient interactions - a crucial link between modern data-science and hospital operations. Two overall questions are posited:
+
+1. First question: are some radiologists more clinically conservative than others in recalling patients, holding patient risk factors equal?
+
+2. Second question: when the radiologists at this hospital interpret a mammogram to make a decision on whether to recall the patient, does the data suggest that they should be weighing some clinical risk factors more heavily than they currently are?
+
+At the core of each question is reducing the number of false negatives - where a radiologist recommends a patient to conduct further tests and thereby allows a patient to begin immediately; and false positives - where a radiologist recommends further tests but ultimately turns out that there was no cancer. By introducing a statistical model, the goal is to augment the predictive capabilities of radiologist and offer a better standard of care for patients.
+
+This audit is structured in four parts: first is a brief summary of the data and how it is structured, second is a demonstration and presentation of answering question one, third is a similar approach for question two, fourth is a conclusion of the audit's findings and recommendations for improvement of future radiologist performance or audit effectiveness.
+
+## Part One: Brief Summary of Data
+```{r summary statistics, echo=FALSE}
+summary(brca)
+```
+The data of mammograms used in this audit were selected from a Hospital in Seattle, Washington. At this hospital, five radiologists were selected at random for the audit - where about 200 mammograms were randomly selected from the hospital for each. For a total of 987 mammograms covering 7 parameters:
+
+* age: 40-49*, 50-59, 60-69, 70 and older
+
+* family history of breast cancer: 0=No*, 1=Yes
+
+* history of breast biopsy/surgery: 0=No*, 1=Yes
+
+* breast cancer symptoms: 0=No*, 1=Yes
+
+* menopause/hormone-therapy status: Pre-menopausal, Post-menopausal & no hormone replacement therapy (HT), Post-menopausal & HT*, Post-menopausal & unknown HT
+
+* previous mammogram: 0=No*, 1=Yes
+
+* breast density classification: 1=Almost entirely fatty, 2=Scattered fibroglandular tissue*, 3=Heterogeneously dense, 4=Extremely dense
+
+Of these factors, two are of special interest: [recall] and [cancer]. In the abstract [recall] can be explained as the following: upon seeing the medical history of a patient, they can either recommend either one of two actions: recall for further screening or not. It is presumed that radiologists utilize all of the information available before they make a decision. This implies that there is a inherent correlative factor between recall and patient history. On the other hand [cancer] is whether or not a patient, whether through the recall screening process, or through another pathway of discovery - develops cancer within a 12 month window after seeing the radiologist. 
+
+## Part Two: Clinical Conservativism
+Without knowing how patients are assigned to radiologists, it is presumed that the relationship is random at best, and preferential at worst. With a random assignment, we can presume that each radiologist chosen for the audit would have seen, on average, the same makeup of patients that would necessitate a mammogram. A random assignment would entail a random drawing of cancer patients from the overall total cancer patient pool from the population. If preferential - meaning that a patient approaches a radiologist and requests care and upon the approval of the radiologist, we see an issue of sampling error within the audit data; as there is a bias introduced between patient selection and radiologist. Radiologist may either self-select for more difficult cases or easier based on preference and patients self-select based on their estimate of the reputation of the radiologist within the medical community. 
+
+Regardless of assignment, the primary method of which we rank the clinical conservationism is to create a model that is trained on each of the radiologists' and then test the model on data from both the radiologist and other patients not seen by the radiologist in question. The goals behind this approach are twofold: one is to recreate a evaluation profile of the radiologist through a linear model of determining whether or not a patient should be recalled, two to determine whether or not a patient who is recalled or not develops cancer within a 12 month time frame.
+
+The table below depicts the Root Mean Squared Error (RMSE) of each radiologist's model tested on a small sub-sample of the radiologist's test data and other radiologists' testing data.
+```{r table of results,echo=FALSE}
+t(df2)[,c(1,2,3,4)]
+```
+Example: 
+
+* **radiologist13**: we have a the same linear model, **lm1 = glm(recall ~ .-cancer, data=brca_train, maxit = maxit),** trained to 20% of radiologist13's sample data as well as the whole mammogram data - excluding radiologist13's.
+
+* **SuperRad**: is a model trained on a 20% random sample of the whole data set and tested on the remainder of the whole data set. This pseudo-radiologist serves as the benchmark for comparing radiologists to an artificial standard if one radiologist had access and saw all of the patients from the data set.
+
+* **Rad13.compare**: is determined by subtracting the model RMSE result of ***radiologist13** by **SuperRad**. A positive value means that a model trained on **radiologist13's** training data did worse once it was tested on out of sample testing data and vice-versa.
+```{r lm1 results, echo=FALSE}
+t(df2)[,c(1,2,3,4)]
+```
+Just by viewing the table, it can be clearly discerned under **lm1** that on average, radiologists 13, 66, and 89 had worse performance than the benchmark **SuperRad** when looking at the RadXX.compare values for each radiologist; while 34 and 95 had better performance. But when we examine the results of each radiologists' model tested on the global data set, we find that on average, all radiologists were worse off. However **lm1** is a linear regression involving non-interacting variables from the data set. If we were to examine **lm2 <<- glm(recall ~ (.-cancer)^2,data=brca_train,maxit = maxit)** where we interact every variable with itself and another we find different results. Radiologist 95's model performance flips and becomes worse with 95's within-sample data. But once tested on the global data set, all radiologists' models performed worse than the benchmark. The takeaway from this analysis demonstrates that human radiologists, on average, are not as effective in determining whether or not a patient should be recalled than a statistical model. Although this might increase the number of false positives and false negatives, the overall increase in cancer detection would allow immediate treatment for true positives who otherwise would have gone undiagnosed. As for whether or not this behavior can be determined to be clinically conservative, meaning that radiologist will opt to recall a patient even if the clinical factors do not signal a need to recall, the distinction is minimal at best and hard to determine as all of the radiologists selected in the audit perform marginally better or worse than the benchmark.
+## Part Three: Weighing Different Clinical Risk Factors
+We first approach this question by developing four linear models that attempts to predict cancer rates based on the parameters available in the data set.
+* lm3 <<- glm(cancer ~ recall,data=brca_train,maxit = maxit)
+* lm4 <<- glm(cancer ~ recall + history,data=brca_train,maxit = maxit)
+* lm5 <<- glm(cancer ~ .,data=brca_train,maxit = maxit)
+* lm6 <<- glm(cancer ~ (.)^2,data=brca_train,maxit = maxit)
+Because the goal of this question is to determine whether or not radiologists are effectively utilizing all of a patient's clinical data to determine whether or not to recall a patient, we first examine **lm3** and **lm4**. Both are linear models designed to find the partial effect of whether or not a patient was recalled and if they developed cancer within the next 12 months. However the distinction is that **lm3** only has recall as its x variable while **lm4** has both recall and family history.
+```{r summary of lm3 and lm5,echo=TRUE}
+summary(lm3)
+summary(lm5)
+```
+By itself, we can see that the **recall** variable has a very significant (p-value close to 0) and large effect on whether or not a patient develops cancer. This makes sense because upon evaluating a patient, a radiologist will then determine whether or not the patient will be recalled and receive additional testing. Based on their experience and education, they will want to find the factors that most likely contributes to cancer. At the same time however, we also see significant (in terms of p-value and magnitude) effects from **age**, **menopause/hormone-therapy status**, and **breast density classification**. In light of these factors, a series of model efficacy tests were conducted to determine the effectiveness of different models.
+```{r model tests, echo=FALSE}
+t(df2)[,c(5,6,7,8,9,10,11,12)]
+```
+Looking across **SuperRad** we see that the RMSE of each model remains fairly consistent throughout the different implementation and test of each model - except when we exclude **recall** in models **lm5** and **lm6** . The exclusion of **recall** has a meaningful impact models' ability to guess the cancer rate for each patient. Given this puzzling outcome, the next step would be to examine **lm5.w** and **lm6.w** where we take models that exclude **recall** - after all, as recall determinations occur after a radiologist sees a patient and not before, we cannot use it to predict cancer; and see which radiologist model performs the best. Iteration terms seems to be resulting in higher RMSE in the predictive model than by itself. Given the summary results from earlier regarding the significance of some variables over others, it can be concluded that radiologists weigh **age**, **menopause/hormone-therapy status**, and **breast density classification** as indicators of cancer than other factors excluding recall.
+## Part Four: Conclusion
+Ultimately, it can be determined that human radiologists may appear to be more conservative than a statistical model, but the underlying analysis claims otherwise - the difference is small in nature and not of sufficient significance to sacrifice patient care for a more effective diagnosing mechanism. The number of false positives and false negatives remain small in comparison when the model changes from one to another. 
+```{r confusion tables,echo=FALSE}
+c.table_lm3 = confusion.table(lm3)
+c.table_lm4 = confusion.table(lm4)
+c.table_lm5 = confusion.table(lm5)
+c.table_lm6 = suppressWarnings(confusion.table(lm6))
+print("lm3 Confusion Table")
+c.table_lm3
+print("lm4 Confusion Table")
+c.table_lm4
+print("lm5 Confusion Table")
+c.table_lm5
+print("lm6 Confusion Table")
+c.table_lm6
+```
+* Pair-wise guesses and actual cancer results. 
++ (0,0) means that a patient did not have caner and was not recalled.
++ (1,0) means that a patient had cancer but was not recalled.
++ (0,1) means that a patient did not have cancer but was recalled.
++ (1,1) means that a patient had cancer and was successfully recalled.
+# Question 3: Going Viral
+```{r question 3 code, include = FALSE}
+rm(list=ls())
+options(warn=-1)
+library(mosaic)
+library(tidyverse)
+library(FNN)
+library(foreach)
+library(nnet)
+require(scales)
+df = read.csv('./online_news.csv')
+df = subset(df, select = -c(url) )
+rmse = function(y, yhat) {
+  sqrt( mean( (y - yhat)^2 ) )
+}
+rmse_model = do(10)*{
+  df = df[sample(nrow(df), 1000),]
+  n = nrow(df)
+  n_train = round(0.8*n) #take x times n, then round to nearest
+  n_test = n - n_train #number of n test is n minus n_train
+  
+  train_ind = sort(sample.int(n, n_train, replace=FALSE)) # randomly sample from n, n_train times, without replacement, then sort
+  df_train = df[train_ind,]
+  df_test = df[-train_ind,]
+  y_df_train = df_train$shares
+  y_df_test = df_test$shares
+  #####
+  # train models: recall # num_videos data_channel_is_lifestyle 
+  maxit <- 10000
+  
+  lm1 <<- glm(shares ~ .,
+              data=df_train,
+              maxit = maxit)
+  lm2 <<- glm(shares ~ 
+                n_tokens_content 
+              + num_imgs 
+              + data_channel_is_world 
+              + max_negative_polarity,
+              data=df_train,
+              maxit = maxit)
+  lm3 <<- glm(shares ~ 
+              . 
+              - n_tokens_content 
+              - num_imgs 
+              - data_channel_is_world
+              - max_negative_polarity,
+              data=df_train,
+              maxit = maxit)
+  lm4 <<- glm(shares ~ (.)^2,
+              data=df_train,
+              maxit = maxit)
+  lm5 <<- glm(shares ~ 
+                (n_tokens_content 
+              + num_imgs 
+              + data_channel_is_world 
+              + max_negative_polarity)^2,
+              data=df_train,
+              maxit = maxit)
+  lm6 <<- glm(shares ~ 
+                (. 
+              - n_tokens_content 
+              - num_imgs 
+              - data_channel_is_world
+              - max_negative_polarity)^2,
+              data=df_train,
+              maxit = maxit)
+  
+  yhat_test1 = predict(lm1,df_test)
+  yhat_test2 = predict(lm2,df_test)
+  yhat_test3 = predict(lm3,df_test)
+  yhat_test4 = predict(lm4,df_test)
+  yhat_test5 = predict(lm5,df_test)
+  yhat_test6 = predict(lm6,df_test)
+  
+  c(rmse(df_test$shares, yhat_test1),
+    rmse(df_test$shares, yhat_test2),
+    rmse(df_test$shares, yhat_test3),
+    rmse(df_test$shares, yhat_test4),
+    rmse(df_test$shares, yhat_test5),
+    rmse(df_test$shares, yhat_test6)
+  )
+}
+rmse_model
+colMeans(rmse_model)
+# in-sample and out of sample accuracy?
+n = nrow(df)
+n_train = round(0.8*n) #take x times n, then round to nearest
+n_test = n - n_train #number of n test is n minus n_train
+train_ind = sort(sample.int(n, n_train, replace=FALSE)) # randomly sample from n, n_train times, without replacement, then sort
+df_train = df[train_ind,]
+df_test = df[-train_ind,]
+sample.accuracy = function(x){
+  yhat_train = ifelse(predict(x) >= 1400, 1, 0)
+  y_train = ifelse(df_train$shares >= 1400, 1, 0)
+  in.sample_table <<- table(y=y_train, yhat=yhat_train)
+  
+  probhat_test = predict(x, newdata=df_test)
+  yhat_test = ifelse(probhat_test >= 1400, 1, 0)
+  y_test = ifelse(df_test$shares >= 1400, 1, 0)
+  out.sample_table <<- table(y=y_test, yhat=yhat_test)
+}
+sample.accuracy(lm1)
+in.sample_table
+out.sample_table
+sample.accuracy(lm2)
+in.sample_table
+out.sample_table
+sample.accuracy(lm3)
+in.sample_table
+out.sample_table
+sample.accuracy(lm4)
+in.sample_table
+out.sample_table
+sample.accuracy(lm5)
+in.sample_table
+out.sample_table
+sample.accuracy(lm6)
+in.sample_table
+out.sample_table
+```
+In the digital age, where information is no longer a constraint but rather - a superfluousness asset, determining what will be popular is a contentious task in of itself. Factors observable and unobservable go into the underlying decision-making of drawing a user's attention towards the consumption of given content. At the core of this question is determining what factors will ultimately predict the 'virality' given a piece of content and its associating metadata. To better understand this phenomena, a data set of 39,797 articles were utilized to train and test models to this effect. 
+## Methodology
+Given the large data set, it was computationally impractical to run the models on the entirety of the data set. A compromise was reached where 1000 articles were randomly sampled per cycle of model testing. Thereby maintaining independent and identically distributed random variables among the samples. Six different linear models were trained on 80% of this sampled data and tested on the remaining 20%. As mentioned before, a Root Mean Squared Error value was established among the models and then they were tested for in-sample and out-of-sample accuracy. As for deciding which factors played a role in determining whether or not content went viral, linear regression models were created and promising variables selected for further testing. 
+The models used were the following
+* lm1 <<- glm(shares ~ .,
+            data=df_train,
+            maxit = maxit)
+* lm2 <<- glm(shares ~ 
+              weekday_is_friday 
+            + num_videos 
+            + data_channel_is_lifestyle 
+            + global_rate_negative_words,
+            data=df_train,
+            maxit = maxit)
+* lm3 <<- glm(shares ~ 
+            . 
+            - weekday_is_friday 
+            - num_videos 
+            - data_channel_is_lifestyle
+            - global_rate_negative_words,
+            data=df_train,
+            maxit = maxit)
+* lm4 <<- glm(shares ~ (.)^2,
+            data=df_train,
+            maxit = maxit)
+* lm5 <<- glm(shares ~ 
+              (weekday_is_friday 
+            + num_videos 
+            + data_channel_is_lifestyle 
+            + global_rate_negative_words)^2,
+            data=df_train,
+            maxit = maxit)
+* lm6 <<- glm(shares ~ 
+              (. 
+            - weekday_is_friday 
+            - num_videos 
+            - data_channel_is_lifestyle
+            - global_rate_negative_words)^2,
+            data=df_train,
+            maxit = maxit)
+## Results
+Because of computational limitation of the underlying base model, only sampling 1000 from a population of about 40,000, different iterations of training/testing cycles yields different results. As a result, only a general sense of what factors makes content go viral can be obtained at this time.
+```{r p3 linear regression, echo=FALSE}
+summary(lm1)
+```
+            
+###The RMSE output for each model:
+```{r question 3 rmse output, echo=FALSE}
+rmse_result = as.data.frame(colMeans(rmse_model))
+rownames(rmse_result) = c("lm1","lm2","lm3","lm4","lm5","lm6")
+colnames(rmse_result) = c("RMSE")
+rmse_result
+```
+### Confusion Matrixes of each Model on the sample 1000 set. 
+```{r p3 confusion matrix, echo=FALSE}
+print("lm1 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm1))
+in.sample_table
+out.sample_table
+print("lm2 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm2))
+in.sample_table
+out.sample_table
+print("lm3 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm3))
+in.sample_table
+out.sample_table
+print("lm4 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm4))
+in.sample_table
+out.sample_table
+print("lm5 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm5))
+in.sample_table
+out.sample_table
+print("lm6 Confusion Matrix, training and testing")
+suppressWarnings(sample.accuracy(lm6))
+in.sample_table
+out.sample_table
+```
+## Conclusion
+In hindsight, it is believed that the method of regress first, then threshold second, would be the optimal mechanism of developing models that predict what articles will go viral. The reasoning behind this presumption is that just as a model needs what factors that will make an article succeed, it will also need to know what factors causes it to not succeed. There are useful information and metrics from failure data that needs to be considered when construing predictive models.
